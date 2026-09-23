@@ -1,0 +1,13 @@
+# Build outputs
+obj/
+dist/
+*.iso
+*.img
+*.tar.gz
+
+# Editor and OS noise
+*.swp
+.DS_Store
+
+# Local state that must never be committed
+.state/

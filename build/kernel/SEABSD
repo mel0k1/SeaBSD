@@ -1,0 +1,33 @@
+# SEABSD -- SeaBSD desktop kernel configuration
+#
+# Copyright (c) 2026, SeaBSD Project
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# SeaBSD is a desktop-oriented distribution built on FreeBSD. This config
+# starts from GENERIC and adds what desktop users need, with a comment for
+# every change explaining *why* it is here.
+#
+# NOTE: the Linux binary compatibility layer (linuxolator) does NOT require
+# kernel config options. It is delivered by loadable modules (linux.ko,
+# linux64.ko) enabled at runtime via rc.conf/loader.conf, so it stays out of
+# this file on purpose.
+
+include "GENERIC"
+
+ident SEABSD
+
+# --- SeaBSD desktop additions ---------------------------------------------
+
+# Read Linux ext2/ext3/ext4 volumes: external drives and dual-boot setups are
+# a desktop reality, and data rescue should not require another OS.
+options EXT2FS
+
+# GEOM ELI (geli) is the foundation of SeaBSD full-disk encryption. Building
+# it in removes a boot-time chicken-and-egg problem for encrypted roots.
+options GEOM_ELI
+
+# --- TODO(seabsd-v0.1) audit list ------------------------------------------
+# - Review GENERIC vs. laptop needs: USB Wi-Fi drivers that are still modules.
+# - Evaluate building i915kms/amdgpu support into the kernel vs. modules
+#   (module route keeps the config generic; revisit after first real builds).
+# - Evaluate console defaults for the installer (vt, fonts, resolution).

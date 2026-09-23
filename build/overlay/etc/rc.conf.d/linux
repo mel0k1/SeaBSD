@@ -1,0 +1,10 @@
+# Enable the Linux binary compatibility layer (linuxolator) on SeaBSD.
+# SeaBSD treats Linux applications as a first-class product surface:
+# see docs/linuxolator.md for the plan and current status.
+
+# Load linux.ko / linux64.ko at boot.
+linux_enable="YES"
+
+# The rc.d/linux script mounts linprocfs/linsysfs under /compat/linux.
+# TODO(seabsd-v0.1): define the SeaBSD mount policy defaults here and the
+# audio bridge defaults (ALSA to OSS) once the linuxolator baseline lands.

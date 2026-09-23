@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  shell-lint:
+    name: ShellCheck (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck all shell scripts
+        run: shellcheck -x $(git ls-files '*.sh')
+
+  markdown-lint:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: markdownlint-cli2
+        uses: DavidAnson/markdownlint-cli2-action@v17
+        with:
+          globs: '**/*.md'
+
+  structure-check:
+    name: Structure and secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository structure check
+        run: sh tools/structure-check.sh
+      - name: Validate workflow YAML
+        run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('YAML OK')"
+
+  freebsd-smoke:
+    name: FreeBSD smoke test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot FreeBSD VM and run checks
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          release: '14.1'
+          prepare: |
+            pkg install -y shellcheck
+          run: |
+            set -e
+            scripts=$(find . -name '*.sh' -not -path './.git/*')
+            for f in $scripts; do
+              sh -n "$f"
+              echo "syntax ok: $f"
+            done
+            sh tools/structure-check.sh
+            shellcheck -x $scripts
+
+  package-source:
+    name: Package source tarball
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create source tarball
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          git archive --format=tar.gz --prefix="seabsd-${ver}/" -o "seabsd-${ver}.tar.gz" HEAD
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: seabsd-source-${{ github.ref_name }}
+          path: seabsd-*.tar.gz
