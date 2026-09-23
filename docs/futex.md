@@ -81,7 +81,7 @@ The first CI executions of the probe on FreeBSD 14.1-RELEASE (linuxolator ABI 5.
 | `timed_abs_rt` | PASS | `FUTEX_CLOCK_REALTIME` deadlines correct |
 | `bitset` | PASS | bitset match/mismatch semantics correct |
 | `requeue` (FUTEX_CMP_REQUEUE) | PASS | the variant glibc actually issues works |
-| `requeue_nc` (FUTEX_REQUEUE) | **FAIL: syscall returned -1** | plain REQUEUE is not usable on 14.1 |
+| `requeue_nc` (FUTEX_REQUEUE) | **FAIL: EINVAL (errno 22)** | plain REQUEUE is rejected by the 14.1 linuxolator |
 | `waitv` | SKIP (ENOSYS) | `futex_waitv` absent on 14.1 — recorded fact |
 | `contention` | PASS | 8000 critical sections, no lost updates |
 
