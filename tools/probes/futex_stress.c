@@ -522,9 +522,14 @@ static int run_requeue(int use_cmp)
             (const struct timespec *)(uintptr_t)(RQ_NTHREADS - 1), &g_f2,
             use_cmp ? 1u : 0u);
         if (r != RQ_NTHREADS) {
-                failf("%s moved %ld, expected %d (1 wake + %d requeued)",
-                    use_cmp ? "FUTEX_CMP_REQUEUE" : "FUTEX_REQUEUE", r,
-                    RQ_NTHREADS, RQ_NTHREADS - 1);
+                if (r == -1)
+                        failf("%s failed: %s (errno=%d)",
+                            use_cmp ? "FUTEX_CMP_REQUEUE" : "FUTEX_REQUEUE",
+                            strerror(errno), errno);
+                else
+                        failf("%s moved %ld, expected %d (1 wake + %d requeued)",
+                            use_cmp ? "FUTEX_CMP_REQUEUE" : "FUTEX_REQUEUE", r,
+                            RQ_NTHREADS, RQ_NTHREADS - 1);
                 err = 1;
         }
 

@@ -12,7 +12,8 @@ Theme: prove the two pillars that define SeaBSD — **Linux compatibility** and 
 - [x] Build a compatibility test matrix script (`tools/linux-matrix.sh`) covering: browsers, Steam, media players, developer tools
 - [ ] Audit syscall and library gaps found on the matrix; file upstream reports for each confirmed gap
 - [x] Futex stress probe and diagnostics tooling: `tools/probes/futex_stress.c`, `tools/futex-diag.sh`, plan in `docs/futex.md`
-- [ ] Run the futex probe on FreeBSD runners and classify results; investigate any FAIL/TIMEOUT against upstream `sys/compat/linux/linux_futex.c`
+- [x] Run the futex probe on FreeBSD runners and classify results — done: 7/8 PASS; findings: plain `FUTEX_REQUEUE` fails on 14.1 (`requeue_nc`, first matrix-found syscall gap, upstream report pending), `futex_waitv` absent on 14.1 (SKIP); details in `docs/futex.md`
+- [ ] File the plain `FUTEX_REQUEUE` finding upstream (errno capture already in the probe) and track it per `kernel-patches/README.md` if not fixed upstream quickly
 - [ ] Audit the futex surfaces the probe does not cover yet: priority-inheritance family, robust lists, `FUTEX_WAKE_OP`
 - [ ] Package tuning: `/compat/linux` layout, procfs/fdescfs mount policy, audio bridge (ALSA to OSS) defaults
 - [x] CI job skeleton for linuxolator tests on a FreeBSD runner (boot VM + pinned base + `base` probes; futex category added)

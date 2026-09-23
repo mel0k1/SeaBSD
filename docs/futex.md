@@ -69,16 +69,25 @@ The programs the user explicitly wants to "chew". Each row maps an application c
 3. **Fix upstream-first.** Kernel-level gaps are filed against upstream FreeBSD with the failing probe attached (the probe is a ready-made regression test for the upstream report). Distribution-level workarounds live in our overlay. Carried patches follow `kernel-patches/README.md`: versioned, justified, each with a probe that fails without it.
 4. **Extend the watchlist tests.** The v0.1 audit adds PI, robust-list and `WAKE_OP` probes so the risk zones above become measured zones.
 
-## First FreeBSD runner results (CI run 35912622451)
+## First FreeBSD runner results (runs 35912622451, 35913320313, 35914899134, 35915581698)
 
-The first CI execution of the probe on FreeBSD 14.1-RELEASE (linuxolator ABI 5.15.0, Ubuntu 24.04 pinned base, `base` probes 3/3 PASS) produced the first real futex signals:
+The first CI executions of the probe on FreeBSD 14.1-RELEASE (linuxolator ABI 5.15.0, Ubuntu 24.04 pinned base, `base` probes 3/3 PASS) produced the first classified futex picture. Final state after probe hardening (the very first run hung inside `requeue` because the probe, not the kernel, left waiters parked — since fixed; waiter loops are deadline-bounded and a kernel regression now surfaces as `FAIL` with counts, never as a hang):
 
-- **`futex-waitv`: SKIP.** The linuxolator on 14.1-RELEASE does not implement `futex_waitv` — the probe received `ENOSYS` and self-reported it, and the matrix recorded SKIP. This is exactly the honest feature-detection behaviour designed for it; the fact is now on record instead of assumed.
-- **`futex-core`: TIMEOUT at 120 s, pinned to `requeue`.** The RUN/PASS progress markers pinpointed the hang precisely: `waitwake`, both absolute timed waits, and `bitset` all PASS; the run stops inside `requeue` until the watchdog fires. The probe itself had a contributing flaw — after a requeue failure its waiters stayed parked forever, turning any requeue regression into a probe-wide hang — so the failure could not be classified from that run alone. The probe has been hardened: waiter loops now use time-sliced waits with a per-test deadline plus rescue wakes (a kernel regression surfaces as `FAIL` with counts, never a hang), `requeue` uses the glibc-realistic `FUTEX_CMP_REQUEUE` variant, and plain `FUTEX_REQUEUE` runs separately as `requeue_nc`. Probe hardening was itself validated on real Linux, where it caught and fixed a genuine probe bug: `FUTEX_WAIT_BITSET` interprets its timeout as absolute (unlike relative `FUTEX_WAIT`), which had silently emptied the waiter queue.
+| Test | Result on FreeBSD 14.1 | Meaning |
+| --- | --- | --- |
+| `waitwake` | PASS | core WAIT/WAKE + private flag correct |
+| `timed_rel` | PASS | relative timeouts (incl. 1 ms edge) correct |
+| `timed_abs_mono` | PASS | absolute monotonic deadlines correct |
+| `timed_abs_rt` | PASS | `FUTEX_CLOCK_REALTIME` deadlines correct |
+| `bitset` | PASS | bitset match/mismatch semantics correct |
+| `requeue` (FUTEX_CMP_REQUEUE) | PASS | the variant glibc actually issues works |
+| `requeue_nc` (FUTEX_REQUEUE) | **FAIL: syscall returned -1** | plain REQUEUE is not usable on 14.1 |
+| `waitv` | SKIP (ENOSYS) | `futex_waitv` absent on 14.1 — recorded fact |
+| `contention` | PASS | 8000 critical sections, no lost updates |
 
-Next CI run therefore classifies the requeue behaviour cleanly: PASS (the earlier hang was a probe artefact), or FAIL with "requeued waiters lost?" counts — which becomes the first upstream audit item with a ready-made regression probe attached.
+The `requeue_nc` failure is the **first syscall gap found by the SeaBSD matrix**: plain `FUTEX_REQUEUE` fails under the 14.1 linuxolator while `FUTEX_CMP_REQUEUE` (identical semantics plus a value check) passes. Practical impact is contained — glibc's pthread implementation uses the CMP variant, which is exactly why real applications have not tripped over this — but it is a genuine upstream finding with a ready-made regression probe attached. Follow-up per the upstream-first policy: capture the exact errno (the probe now reports it), file it against FreeBSD with `requeue_nc` as the reproducer, and track it in `kernel-patches/` only if upstream cannot take the fix quickly.
 
-Either way the probe is doing its job: futex behaviour under the linuxolator is now a measured quantity on every push, not an assumption.
+This is the matrix working as designed: futex behaviour under the linuxolator is now a measured quantity on every push, not an assumption.
 
 ## Success criteria
 
