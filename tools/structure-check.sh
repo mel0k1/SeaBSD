@@ -41,16 +41,20 @@ for f in \
   docs/linuxolator.md \
   docs/hardware-support.md \
   docs/linux-base.md \
+  docs/futex.md \
+  kernel-patches/README.md \
   tools/hwcheck.sh \
   tools/linux-matrix.sh \
   tools/linux-matrix.tsv \
   tools/fetch-linux-base.sh \
+  tools/futex-diag.sh \
+  tools/probes/futex_stress.c \
   .github/workflows/ci.yml
 do
   check_file "$f"
 done
 
-for f in build/build-iso.sh build/build-kernel.sh tools/structure-check.sh tools/hwcheck.sh tools/linux-matrix.sh tools/fetch-linux-base.sh; do
+for f in build/build-iso.sh build/build-kernel.sh tools/structure-check.sh tools/hwcheck.sh tools/linux-matrix.sh tools/fetch-linux-base.sh tools/futex-diag.sh; do
   check_executable_bit "$f"
 done
 

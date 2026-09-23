@@ -35,6 +35,37 @@ jobs:
       - name: Validate workflow YAML
         run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('YAML OK')"
 
+  # Static Linux probe binaries (tools/probes/*.c) must be compiled where a
+  # Linux compiler is available. The FreeBSD matrix job downloads the artifact
+  # and executes the probes through the linuxolator. Sanity-running on real
+  # Linux first validates the probe itself (a FAIL here is a probe bug, not a
+  # linuxolator bug).
+  linux-probes:
+    name: Build Linux probes (static x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile futex probe (static)
+        run: |
+          mkdir -p dist/probes
+          cc -std=gnu11 -O2 -Wall -Wextra -static -o dist/probes/futex_stress \
+            tools/probes/futex_stress.c -lpthread
+          file dist/probes/futex_stress
+      - name: Sanity-run the probe on real Linux
+        run: |
+          set +e
+          dist/probes/futex_stress
+          rc=$?
+          echo "probe rc=$rc (0=pass, 77=all-skipped, 1=fail, 124=watchdog)"
+          test "$rc" -eq 0 || test "$rc" -eq 77
+      - name: Upload probe binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-probes
+          path: dist/probes/futex_stress
+          if-no-files-found: error
+
   # Stabilization phase: VM jobs are non-blocking (continue-on-error) while the
   # matrix results are being collected on real FreeBSD runners.
   # NOTE: do not `pkg install shellcheck` in the VM - the package no longer
@@ -62,11 +93,17 @@ jobs:
             sh tools/linux-matrix.sh list
 
   freebsd-linux-matrix:
-    name: FreeBSD linuxolator matrix (base)
+    name: FreeBSD linuxolator matrix (base + futex)
+    needs: linux-probes
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: Download probe binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-probes
+          path: probes
       - name: Boot FreeBSD VM, install pinned Linux base, run matrix
         uses: vmactions/freebsd-vm@v1
         with:
@@ -84,16 +121,26 @@ jobs:
             kldload linsysfs || true
             mount -t linprocfs linproc /compat/linux/proc
             mount -t linsysfs linsys /compat/linux/sys
+            rc_base=0; rc_futex=0
             sh tools/linux-matrix.sh check
-            sh tools/linux-matrix.sh --only base --report dist/freebsd-matrix-report.yaml run
-            echo '=== matrix report ==='
+            sh tools/linux-matrix.sh --only base --report dist/freebsd-matrix-report.yaml run || rc_base=$?
+            mkdir -p /tmp/seabsd-probes
+            cp probes/futex_stress /tmp/seabsd-probes/
+            chmod +x /tmp/seabsd-probes/futex_stress
+            SEABSD_PROBES_DIR=/tmp/seabsd-probes \
+              sh tools/linux-matrix.sh --timeout 120 --only futex \
+              --report dist/freebsd-futex-report.yaml run || rc_futex=$?
+            echo "matrix rc=$rc_base futex rc=$rc_futex"
+            echo '=== base matrix report ==='
             cat dist/freebsd-matrix-report.yaml
-      - name: Upload matrix report
+            echo '=== futex matrix report ==='
+            cat dist/freebsd-futex-report.yaml
+      - name: Upload matrix reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: freebsd-linux-matrix-report
-          path: dist/freebsd-matrix-report.yaml
+          path: dist/*.yaml
           if-no-files-found: ignore
 
   package-source:
