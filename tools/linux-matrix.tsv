@@ -13,6 +13,10 @@
 #
 # Rules for adding entries:
 # - Probes must be non-interactive and safe to run on a user workstation.
+# - Linux shell scripts CANNOT be executed directly by shebang: the linuxolator
+#   does not translate script interpreters. Invoke scripts explicitly through
+#   the base bash, e.g. binary=/compat/linux/usr/bin/bash, args="<script> ...".
+#   (Found by the first CI matrix run: ldd is a script and returned exit 127.)
 # - "base" entries always exist once a Linux base is installed: they verify the
 #   linuxolator itself, before any application-level conclusions are drawn.
 # - GUI launch tests are out of scope for v0.1 (see ROADMAP, "Lighthouse").
@@ -25,7 +29,7 @@
 # --- Linuxolator baseline (always run first) -------------------------------
 base-coreutils|base|no|/compat/linux/usr/bin/ls|--version|GNU
 base-bash|base|no|/compat/linux/usr/bin/bash|--version|bash
-base-ldd|base|no|/compat/linux/usr/bin/ldd|--version|ldd
+base-ldd|base|no|/compat/linux/usr/bin/bash|/compat/linux/usr/bin/ldd --version|ldd
 
 # --- Browsers ---------------------------------------------------------------
 linux-chromium|browsers|yes|/compat/linux/usr/bin/chromium|--version|Chromium

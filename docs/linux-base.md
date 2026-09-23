@@ -50,6 +50,7 @@ The Ubuntu Base minbase rootfs was inspected at pin time:
 ## Known risks
 
 - The linuxolator kernel layer predates some interfaces modern userlands expect (see `docs/linuxolator.md` pain-point table). The pinned glibc 2.39 will exercise syscall paths that CentOS-era bases never touched; gaps found here become the upstream audit list for v0.1.
+- **Direct execution of Linux shell scripts by shebang does not work.** The linuxolator translates ELF interpreters but not script interpreters, so a script like `ldd` (`#!/bin/bash`) exits with code 127 when executed directly. Invoke scripts explicitly through the base interpreter: `/compat/linux/usr/bin/bash /compat/linux/usr/bin/ldd --version`. The matrix `base-ldd` entry encodes this rule, and the matrix data file documents it for future entries.
 - Ubuntu userland expects systemd; under the linuxolator we provide the needed pseudo-filesystem views (`linprocfs`, `linsysfs`) and do not run systemd at all. Applications that hard-require systemd are documented as unsupported.
 - Security updates inside the base require rebuilding from a new point release — this is deliberate: updates are a build-time decision with a matrix gate, not an untracked drift.
 

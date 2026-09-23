@@ -79,11 +79,11 @@ check_env() {
   printf '== SeaBSD linuxolator environment check ==\n'
   printf 'host: %s\n' "$(uname -sr)"
 
-  osrelease=$(sysctl -n compat.linux.osrelease 2>/dev/null || printf 'unknown')
-  printf 'compat.linux.osrelease: %s\n' "$osrelease"
-
-  if kldstat -m linux64 >/dev/null 2>&1; then
-    printf 'module linux64: loaded\n'
+  # The presence of the compat.linux.osrelease sysctl is the reliable signal
+  # that the linuxolator is loaded; kldstat -m does not match reliably here.
+  osrelease=$(sysctl -n compat.linux.osrelease 2>/dev/null || printf '')
+  if [ -n "$osrelease" ]; then
+    printf 'module linux64: loaded (compat.linux.osrelease: %s)\n' "$osrelease"
   else
     printf 'module linux64: NOT loaded (hint: sysrc linux_enable=YES && service linux start)\n'
   fi

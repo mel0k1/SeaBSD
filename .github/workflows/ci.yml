@@ -86,6 +86,8 @@ jobs:
             mount -t linsysfs linsys /compat/linux/sys
             sh tools/linux-matrix.sh check
             sh tools/linux-matrix.sh --only base --report dist/freebsd-matrix-report.yaml run
+            echo '=== matrix report ==='
+            cat dist/freebsd-matrix-report.yaml
       - name: Upload matrix report
         if: always()
         uses: actions/upload-artifact@v4

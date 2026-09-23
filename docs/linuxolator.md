@@ -50,7 +50,7 @@ sh tools/linux-matrix.sh --strict run        # treat MISSING entries as failures
 
 The report (`dist/linux-matrix-report.yaml` by default) is designed to be attached to GitHub issues. `base` entries run first by design: if they fail, application-level failures are meaningless until the linuxolator itself is fixed. Optional entries that are simply not installed become `SKIP`, not `FAIL`, so a minimal system still produces a clean, meaningful report.
 
-CI runs the `base` probes on every push: the `freebsd-linux-matrix` job boots a FreeBSD VM, installs the pinned base with `tools/fetch-linux-base.sh` and runs `--only base` (see `docs/linux-base.md` for the pinned artifact). This keeps a continuous, honest signal that the linuxolator itself works with the frozen userland.
+CI runs the `base` probes on every push: the `freebsd-linux-matrix` job boots a FreeBSD VM, installs the pinned base with `tools/fetch-linux-base.sh` and runs `--only base` (see `docs/linux-base.md` for the pinned artifact). This keeps a continuous, honest signal that the linuxolator itself works with the frozen userland. First recorded result (FreeBSD 14.1-RELEASE, linuxolator 5.15.0, Ubuntu 24.04 base): `ls` and `bash` pass; direct shebang execution of scripts does not (see `docs/linux-base.md`, known risks) — script probes are invoked via the base `bash` explicitly.
 
 ## Success criteria for v0.1
 
