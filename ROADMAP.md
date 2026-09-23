@@ -9,7 +9,7 @@ Theme: prove the two pillars that define SeaBSD — **Linux compatibility** and 
 ### Linuxolator baseline
 
 - [ ] Select and document the target Linux userland for v0.1 (candidate: Ubuntu jammy base) and record the decision in `docs/linuxolator.md`
-- [ ] Build a compatibility test matrix script (`tools/linux-matrix.sh`) covering: browsers, Steam, media players, developer tools
+- [x] Build a compatibility test matrix script (`tools/linux-matrix.sh`) covering: browsers, Steam, media players, developer tools
 - [ ] Audit syscall and library gaps found on the matrix; file upstream reports for each confirmed gap
 - [ ] Package tuning: `/compat/linux` layout, procfs/fdescfs mount policy, audio bridge (ALSA to OSS) defaults
 - [ ] CI job skeleton for linuxolator tests on a FreeBSD runner

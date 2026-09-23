@@ -31,6 +31,25 @@ For SeaBSD this layer is a product surface, not a compatibility footnote. Most d
 4. **Tune the defaults.** Make the common case work with zero configuration: correct `/compat/linux` mounts, sensible audio bridging defaults, and a diagnostic command that captures a Linux application failure in a form useful for bug reports.
 5. **Document for users.** Publish a plain-language guide: what works, what needs an extra step, what is known broken. Honesty here is a SeaBSD principle, not an option.
 
+## Test matrix tooling (v0.1)
+
+The matrix is implemented as two files:
+
+- `tools/linux-matrix.tsv` — the matrix data: one probe per line, with name, category, whether the entry is optional, the binary to run, its arguments and the regex expected in the output. Categories: `base` (linuxolator sanity probes), `browsers`, `gaming`, `media`, `development`.
+- `tools/linux-matrix.sh` — the runner. It verifies the environment (linux64 module, `/compat/linux` base, linprocfs mounts), executes every probe under a time limit, classifies results as `PASS` / `FAIL` / `TIMEOUT` / `SKIP` / `MISSING`, and writes a YAML report.
+
+Usage on a FreeBSD system:
+
+```sh
+sh tools/linux-matrix.sh check               # environment diagnostics
+sh tools/linux-matrix.sh list                # show the matrix
+sh tools/linux-matrix.sh run                 # full run + report
+sh tools/linux-matrix.sh --only base run     # linuxolator sanity probes only
+sh tools/linux-matrix.sh --strict run        # treat MISSING entries as failures
+```
+
+The report (`dist/linux-matrix-report.yaml` by default) is designed to be attached to GitHub issues. `base` entries run first by design: if they fail, application-level failures are meaningless until the linuxolator itself is fixed. Optional entries that are simply not installed become `SKIP`, not `FAIL`, so a minimal system still produces a clean, meaningful report.
+
 ## Success criteria for v0.1
 
 - The full test matrix has recorded results with zero unexplained failures.

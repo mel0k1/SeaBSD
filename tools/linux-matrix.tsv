@@ -1,0 +1,46 @@
+# SeaBSD linuxolator compatibility matrix (v0.1 draft)
+#
+# Fields (pipe-separated):
+#   name      short identifier used in reports and logs
+#   category  base | browsers | gaming | media | development
+#   optional  yes | no  - optional entries become SKIP when the binary is absent;
+#                         required entries become MISSING
+#   binary    absolute path (inside /compat/linux for Linux userland probes) or
+#             a command name resolved via PATH (for FreeBSD-side launchers)
+#   args      arguments passed to the binary (must not contain "|")
+#   expect    POSIX extended regex matched against combined probe output;
+#             this is the only field allowed to contain "|"
+#
+# Rules for adding entries:
+# - Probes must be non-interactive and safe to run on a user workstation.
+# - "base" entries always exist once a Linux base is installed: they verify the
+#   linuxolator itself, before any application-level conclusions are drawn.
+# - GUI launch tests are out of scope for v0.1 (see ROADMAP, "Lighthouse").
+# - Paths may need adjusting to the Linux base in use; keep at least one
+#   working "base" entry valid for the default SeaBSD Linux base.
+#
+# TODO(seabsd-v0.1): after the Linux base decision lands, verify every path
+# below against the actual base layout and record results in docs/linuxolator.md.
+
+# --- Linuxolator baseline (always run first) -------------------------------
+base-coreutils|base|no|/compat/linux/usr/bin/ls|--version|GNU
+base-bash|base|no|/compat/linux/usr/bin/bash|--version|bash
+base-ldd|base|no|/compat/linux/usr/bin/ldd|--version|ldd
+
+# --- Browsers ---------------------------------------------------------------
+linux-chromium|browsers|yes|/compat/linux/usr/bin/chromium|--version|Chromium
+linux-firefox|browsers|yes|/compat/linux/usr/bin/firefox|--version|Firefox
+
+# --- Gaming -----------------------------------------------------------------
+# Steam is launched through the FreeBSD-side linux-steam-utils launcher; any
+# non-empty output proves the linuxolator stack loads the launcher. Real game
+# tests belong to the v0.2 sandbox track.
+linux-steam|gaming|yes|/usr/local/bin/steam|--version|.
+
+# --- Media ------------------------------------------------------------------
+linux-ffmpeg|media|yes|/compat/linux/usr/bin/ffmpeg|-version|ffmpeg
+
+# --- Development tools -------------------------------------------------------
+linux-gcc|development|yes|/compat/linux/usr/bin/gcc|--version|gcc
+linux-python3|development|yes|/compat/linux/usr/bin/python3|--version|Python
+linux-git|development|yes|/compat/linux/usr/bin/git|--version|git version

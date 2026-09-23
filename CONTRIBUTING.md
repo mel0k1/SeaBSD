@@ -52,6 +52,17 @@ sh tools/hwcheck.sh > hwreport.txt
 
 Then open an issue and attach the report, stating clearly what works and what does not (Wi-Fi, sound, suspend, GPU acceleration). Reports feed the compatibility database described in [docs/hardware-support.md](docs/hardware-support.md).
 
+## Running the linuxolator compatibility matrix
+
+If you have a FreeBSD system (or SeaBSD itself), run the Linux application compatibility matrix and attach the report to a GitHub issue:
+
+```sh
+sh tools/linux-matrix.sh check   # environment diagnostics first
+sh tools/linux-matrix.sh run     # full run, report in dist/linux-matrix-report.yaml
+```
+
+Results are classified as `PASS`, `FAIL`, `TIMEOUT`, `SKIP` or `MISSING` — the meaning of each status is documented in [docs/linuxolator.md](docs/linuxolator.md). Both green and red reports are valuable: they feed directly into the v0.1 linuxolator audit.
+
 ## License
 
 By contributing you agree that your contributions are licensed under the BSD 3-Clause License, matching the [LICENSE](LICENSE) of the project.

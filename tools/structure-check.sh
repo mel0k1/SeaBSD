@@ -41,12 +41,14 @@ for f in \
   docs/linuxolator.md \
   docs/hardware-support.md \
   tools/hwcheck.sh \
+  tools/linux-matrix.sh \
+  tools/linux-matrix.tsv \
   .github/workflows/ci.yml
 do
   check_file "$f"
 done
 
-for f in build/build-iso.sh build/build-kernel.sh tools/structure-check.sh tools/hwcheck.sh; do
+for f in build/build-iso.sh build/build-kernel.sh tools/structure-check.sh tools/hwcheck.sh tools/linux-matrix.sh; do
   check_executable_bit "$f"
 done
 
