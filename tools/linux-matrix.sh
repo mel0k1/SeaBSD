@@ -226,7 +226,7 @@ run_matrix() {
         printf '[TIMEOUT] %s (%s): exceeded %ss\n' "$name" "$category" "$TIMEOUT_SECS"
         # Include the output tail: probe progress markers (RUN/PASS lines)
         # show exactly how far a hanging probe got.
-        detail=$(tail -n 5 "$OUT_TMP" | tr '\n' ' ' | tr -s ' ' | cut -c1-200)
+        detail=$(tail -n 20 "$OUT_TMP" | tr '\n' ' ' | tr -s ' ' | cut -c1-1000)
         printf '[TIMEOUT]   last output: %s\n' "$detail"
         printf '  - name: "%s"\n    category: "%s"\n    status: TIMEOUT\n    exit: %s\n    detail: "exceeded %ss limit; last output: %s"\n' \
           "$name" "$category" "$rc" "$TIMEOUT_SECS" "$detail" >> "$REPORT_TMP"
@@ -257,7 +257,7 @@ run_matrix() {
       *)
         c_fail=$((c_fail + 1))
         printf '[FAIL]    %s (%s): probe exited with code %s\n' "$name" "$category" "$rc"
-        detail=$(tail -n 3 "$OUT_TMP" | tr '\n' ' ' | tr -s ' ' | cut -c1-200)
+        detail=$(tail -n 20 "$OUT_TMP" | tr '\n' ' ' | tr -s ' ' | cut -c1-1000)
         printf '  - name: "%s"\n    category: "%s"\n    status: FAIL\n    exit: %s\n    detail: "probe error: %s"\n' \
           "$name" "$category" "$rc" "$detail" >> "$REPORT_TMP"
         ;;
