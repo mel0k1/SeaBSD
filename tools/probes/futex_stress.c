@@ -642,6 +642,10 @@ int main(int argc, char **argv)
                         continue;
 
                 g_err[0] = '\0';
+                /* Progress markers survive a hang: whoever reads the captured
+                 * output sees exactly which test was running when it stopped. */
+                printf("RUN %s\n", tests[t].name);
+                fflush(stdout);
                 rc = tests[t].fn();
                 if (rc == 0) {
                         npass++;

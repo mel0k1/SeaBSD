@@ -69,6 +69,15 @@ The programs the user explicitly wants to "chew". Each row maps an application c
 3. **Fix upstream-first.** Kernel-level gaps are filed against upstream FreeBSD with the failing probe attached (the probe is a ready-made regression test for the upstream report). Distribution-level workarounds live in our overlay. Carried patches follow `kernel-patches/README.md`: versioned, justified, each with a probe that fails without it.
 4. **Extend the watchlist tests.** The v0.1 audit adds PI, robust-list and `WAKE_OP` probes so the risk zones above become measured zones.
 
+## First FreeBSD runner results (CI run 35912622451)
+
+The first CI execution of the probe on FreeBSD 14.1-RELEASE (linuxolator ABI 5.15.0, Ubuntu 24.04 pinned base, `base` probes 3/3 PASS) produced the first real futex signals:
+
+- **`futex-waitv`: SKIP.** The linuxolator on 14.1-RELEASE does not implement `futex_waitv` — the probe received `ENOSYS` and self-reported it, and the matrix recorded SKIP. This is exactly the honest feature-detection behaviour designed for it; the fact is now on record instead of assumed.
+- **`futex-core`: TIMEOUT at 120 s.** The full probe run did not complete inside the limit. Two hypotheses: a genuine hang in one of the seven tests (the classic futex-deadlock scenario this probe exists to catch) or extreme slowness under the CI VM's emulation (qemu without KVM can slow futex-heavy loops by an order of magnitude). The probe's per-test output was not captured on TIMEOUT in that run — observability has been improved since (RUN/PASS progress markers are flushed per test, and the matrix report now includes the last output lines for TIMEOUT entries), so the next CI run will pinpoint exactly where the run stops.
+
+Either way the probe is doing its job: futex behaviour under the linuxolator is now a measured quantity on every push, not an assumption.
+
 ## Success criteria
 
 - v0.1: `futex-core` PASS on every supported FreeBSD runner, `futex-waitv` PASS or documented-SKIP; any FAIL traced to an upstream report or a carried patch.
