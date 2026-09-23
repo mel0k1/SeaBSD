@@ -36,10 +36,12 @@ jobs:
         run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('YAML OK')"
 
   # Stabilization phase: VM jobs are non-blocking (continue-on-error) while the
-  # vmactions boot configuration is being tuned. Core jobs above must stay green.
+  # matrix results are being collected on real FreeBSD runners.
+  # NOTE: do not `pkg install shellcheck` in the VM - the package no longer
+  # exists in FreeBSD repositories; linting is covered by the Ubuntu job.
   freebsd-smoke:
     name: FreeBSD smoke test
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +49,7 @@ jobs:
         uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
-          release: '14.2'
+          release: '14.1'
           run: |
             set -e
             scripts=$(find . -name '*.sh' -not -path './.git/*')
@@ -56,12 +58,12 @@ jobs:
               echo "syntax ok: $f"
             done
             sh tools/structure-check.sh
-            sh tools/linux-matrix.sh check || true
+            sh tools/linux-matrix.sh check
             sh tools/linux-matrix.sh list
 
   freebsd-linux-matrix:
     name: FreeBSD linuxolator matrix (base)
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +71,7 @@ jobs:
         uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
-          release: '14.2'
+          release: '14.1'
           prepare: |
             pkg install -y ca_root_nss
           run: |
@@ -78,6 +80,8 @@ jobs:
             sysctl -n compat.linux.osrelease
             sh tools/fetch-linux-base.sh --dest /compat/linux
             mkdir -p /compat/linux/proc /compat/linux/sys
+            kldload linprocfs || true
+            kldload linsysfs || true
             mount -t linprocfs linproc /compat/linux/proc
             mount -t linsysfs linsys /compat/linux/sys
             sh tools/linux-matrix.sh check
