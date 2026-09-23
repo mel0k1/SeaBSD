@@ -63,5 +63,5 @@ linux-git|development|yes|/compat/linux/usr/bin/git|--version|git version
 # older hosts - recorded as SKIP). Plan and risk zones: docs/futex.md.
 # Required entries: CI installs the probe binary and points SEABSD_PROBES_DIR
 # at it; on a workstation without probes they are reported as MISSING.
-futex-core|futex|no|@PROBES@/futex_stress|waitwake timed_rel timed_abs_mono timed_abs_rt bitset requeue contention|fail=0
+futex-core|futex|no|@PROBES@/futex_stress|waitwake timed_rel timed_abs_mono timed_abs_rt bitset requeue requeue_nc contention|fail=0
 futex-waitv|futex|no|@PROBES@/futex_stress|waitv|fail=0

@@ -69,6 +69,8 @@ struct futex_waitv {
 #define CT_NTHREADS     8
 #define CT_ITERATIONS   1000
 #define HANDSHAKE_SECS  2.0
+#define TEST_DEADLINE   10.0
+#define WAIT_STEP_MS    250
 #define WATCHDOG_SECS   120
 
 /* --------------------------------------------------------------- helpers */
@@ -142,8 +144,11 @@ static uint32_t g_f2;           /* requeue target futex word                */
 static _Atomic int g_asleep;    /* waiters that entered the sleep loop      */
 static _Atomic int g_woken;     /* waiters that report a successful wake    */
 static _Atomic int g_terr;      /* thread-side kernel errors                */
+static _Atomic int g_stuck;     /* waiters that hit the deadline un-woken   */
+static _Atomic int g_done;      /* waiters that finished (any way at all)   */
 static _Atomic long g_counter;  /* contention critical-section counter      */
 static uint32_t g_lock;         /* contention futex-based lock word         */
+static double g_deadline;       /* per-test wall-clock deadline (mono secs) */
 
 typedef int (*test_fn)(void);
 
@@ -152,47 +157,89 @@ struct test {
         test_fn fn;
 };
 
+/* Wake up to `want` sleepers, retrying until the deadline. This keeps the
+ * wake-count assertions honest even when a waiter is between time-sliced
+ * waits, and it cannot hang. */
+static long wake_retry(uint32_t *uaddr, int op, int want, uint32_t bitset)
+{
+        long total = 0;
+
+        while (total < want && now_mono() < g_deadline) {
+                long r = futex_call(uaddr, op, (uint32_t)(want - total), NULL,
+                    NULL, bitset);
+
+                if (r > 0)
+                        total += r;
+                else if (r == -1 && errno == EINVAL)
+                        break;
+                usleep(2000);
+        }
+        return total;
+}
+
 /* ----------------------------------------------------------- waiter bodies */
 
-/* Sleep on g_f1 until its value becomes non-zero (plain FUTEX_WAIT). */
+/* Sleep on g_f1 until its value becomes non-zero (plain FUTEX_WAIT).
+ * All waiter loops use time-sliced waits plus a test deadline: a kernel
+ * that loses wakeups produces a FAIL report, never a probe-wide hang. */
 static void *waiter_plain(void *arg)
 {
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = WAIT_STEP_MS * 1000000L };
+
         (void)arg;
         __atomic_add_fetch(&g_asleep, 1, __ATOMIC_SEQ_CST);
         for (;;) {
                 if (__atomic_load_n(&g_f1, __ATOMIC_ACQUIRE) != 0)
                         break;
-                if (futex_call(&g_f1, FUTEX_WAIT_PRIVATE, 0, NULL, NULL,
+                if (now_mono() > g_deadline) {
+                        __atomic_add_fetch(&g_stuck, 1, __ATOMIC_SEQ_CST);
+                        break;
+                }
+                if (futex_call(&g_f1, FUTEX_WAIT_PRIVATE, 0, &ts, NULL,
                     0) == -1) {
-                        if (errno == EAGAIN || errno == EINTR)
+                        if (errno == EAGAIN || errno == EINTR ||
+                            errno == ETIMEDOUT)
                                 continue;
                         __atomic_add_fetch(&g_terr, 1, __ATOMIC_SEQ_CST);
-                        return NULL;
+                        break;
                 }
                 __atomic_add_fetch(&g_woken, 1, __ATOMIC_SEQ_CST);
                 break;
         }
+        __atomic_add_fetch(&g_done, 1, __ATOMIC_SEQ_CST);
         return NULL;
 }
 
-/* Same, but with FUTEX_WAIT_BITSET restricted to bit 0x2. */
+/* Same, but with FUTEX_WAIT_BITSET restricted to bit 0x2. NOTE: WAIT_BITSET
+ * interprets its timeout as ABSOLUTE (unlike the relative FUTEX_WAIT), so
+ * each slice computes a fresh absolute deadline. */
 static void *waiter_bitset(void *arg)
 {
         (void)arg;
         __atomic_add_fetch(&g_asleep, 1, __ATOMIC_SEQ_CST);
         for (;;) {
+                struct timespec dl;
+
                 if (__atomic_load_n(&g_f1, __ATOMIC_ACQUIRE) != 0)
                         break;
-                if (futex_call(&g_f1, FUTEX_WAIT_BITSET_PRIVATE, 0, NULL, NULL,
+                if (now_mono() > g_deadline) {
+                        __atomic_add_fetch(&g_stuck, 1, __ATOMIC_SEQ_CST);
+                        break;
+                }
+                clock_gettime(CLOCK_MONOTONIC, &dl);
+                ts_add_ms(&dl, WAIT_STEP_MS);
+                if (futex_call(&g_f1, FUTEX_WAIT_BITSET_PRIVATE, 0, &dl, NULL,
                     0x2) == -1) {
-                        if (errno == EAGAIN || errno == EINTR)
+                        if (errno == EAGAIN || errno == EINTR ||
+                            errno == ETIMEDOUT)
                                 continue;
                         __atomic_add_fetch(&g_terr, 1, __ATOMIC_SEQ_CST);
-                        return NULL;
+                        break;
                 }
                 __atomic_add_fetch(&g_woken, 1, __ATOMIC_SEQ_CST);
                 break;
         }
+        __atomic_add_fetch(&g_done, 1, __ATOMIC_SEQ_CST);
         return NULL;
 }
 
@@ -200,22 +247,30 @@ static void *waiter_bitset(void *arg)
  * re-checks both words and only exits when one of them is non-zero. */
 static void *waiter_requeue(void *arg)
 {
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = WAIT_STEP_MS * 1000000L };
+
         (void)arg;
         __atomic_add_fetch(&g_asleep, 1, __ATOMIC_SEQ_CST);
         for (;;) {
                 if (__atomic_load_n(&g_f1, __ATOMIC_ACQUIRE) != 0 ||
                     __atomic_load_n(&g_f2, __ATOMIC_ACQUIRE) != 0)
                         break;
-                if (futex_call(&g_f1, FUTEX_WAIT_PRIVATE, 0, NULL, NULL,
+                if (now_mono() > g_deadline) {
+                        __atomic_add_fetch(&g_stuck, 1, __ATOMIC_SEQ_CST);
+                        break;
+                }
+                if (futex_call(&g_f1, FUTEX_WAIT_PRIVATE, 0, &ts, NULL,
                     0) == -1) {
-                        if (errno == EAGAIN || errno == EINTR)
+                        if (errno == EAGAIN || errno == EINTR ||
+                            errno == ETIMEDOUT)
                                 continue;
                         __atomic_add_fetch(&g_terr, 1, __ATOMIC_SEQ_CST);
-                        return NULL;
+                        break;
                 }
                 /* Woken directly before the requeue, or woken on g_f2 after
                  * being requeued; both cases fall through to the re-check. */
         }
+        __atomic_add_fetch(&g_done, 1, __ATOMIC_SEQ_CST);
         return NULL;
 }
 
@@ -224,13 +279,16 @@ static void *waiter_requeue(void *arg)
 static int t_waitwake(void)
 {
         pthread_t th[WW_NTHREADS];
-        long r;
+        long total;
         int i, err = 0;
 
         __atomic_store_n(&g_f1, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_asleep, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_woken, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_terr, 0, __ATOMIC_SEQ_CST);
+        __atomic_store_n(&g_stuck, 0, __ATOMIC_SEQ_CST);
+        __atomic_store_n(&g_done, 0, __ATOMIC_SEQ_CST);
+        g_deadline = now_mono() + TEST_DEADLINE;
 
         for (i = 0; i < WW_NTHREADS; i++)
                 if (pthread_create(&th[i], NULL, waiter_plain, NULL) != 0) {
@@ -245,22 +303,26 @@ static int t_waitwake(void)
         }
         usleep(20000);
         __atomic_store_n(&g_f1, 1, __ATOMIC_SEQ_CST);
-        r = futex_call(&g_f1, FUTEX_WAKE_PRIVATE, WW_NTHREADS, NULL, NULL, 0);
-        if (r != WW_NTHREADS) {
-                failf("FUTEX_WAKE woke %ld threads, expected %d", r,
-                    WW_NTHREADS);
-                err = 1;
-        }
+        total = wake_retry(&g_f1, FUTEX_WAKE_PRIVATE, WW_NTHREADS,
+            FUTEX_BITSET_MATCH_ANY);
         for (i = 0; i < WW_NTHREADS; i++)
                 pthread_join(th[i], NULL);
-        if (__atomic_load_n(&g_terr, __ATOMIC_SEQ_CST) != 0) {
-                failf("%d waiter threads reported kernel errors", g_terr);
+
+        if (total != WW_NTHREADS) {
+                failf("FUTEX_WAKE woke %ld threads, expected %d", total,
+                    WW_NTHREADS);
                 err = 1;
         }
-        if (!err && __atomic_load_n(&g_woken, __ATOMIC_SEQ_CST) !=
-            WW_NTHREADS) {
-                failf("only %d/%d waiters reported a wakeup", g_woken,
-                    WW_NTHREADS);
+        if (__atomic_load_n(&g_done, __ATOMIC_SEQ_CST) != WW_NTHREADS) {
+                failf("only %d/%d waiters finished", g_done, WW_NTHREADS);
+                err = 1;
+        }
+        if (__atomic_load_n(&g_stuck, __ATOMIC_SEQ_CST) != 0) {
+                failf("%d waiters hit the deadline without a wakeup", g_stuck);
+                err = 1;
+        }
+        if (__atomic_load_n(&g_terr, __ATOMIC_SEQ_CST) != 0) {
+                failf("%d waiter threads reported kernel errors", g_terr);
                 err = 1;
         }
         return err;
@@ -361,13 +423,16 @@ static int t_timed_abs_rt(void)
 static int t_bitset(void)
 {
         pthread_t th[WW_NTHREADS];
-        long r;
+        long r, total;
         int i, err = 0;
 
         __atomic_store_n(&g_f1, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_asleep, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_woken, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_terr, 0, __ATOMIC_SEQ_CST);
+        __atomic_store_n(&g_stuck, 0, __ATOMIC_SEQ_CST);
+        __atomic_store_n(&g_done, 0, __ATOMIC_SEQ_CST);
+        g_deadline = now_mono() + TEST_DEADLINE;
 
         for (i = 0; i < WW_NTHREADS; i++)
                 if (pthread_create(&th[i], NULL, waiter_bitset, NULL) != 0) {
@@ -391,40 +456,52 @@ static int t_bitset(void)
                 err = 1;
         }
 
-        r = futex_call(&g_f1, FUTEX_WAKE_BITSET_PRIVATE, WW_NTHREADS, NULL,
-            NULL, 0x2);
-        if (r != WW_NTHREADS) {
-                failf("WAKE_BITSET with matching bit woke %ld, expected %d",
-                    r, WW_NTHREADS);
-                err = 1;
-        }
-
+        total = wake_retry(&g_f1, FUTEX_WAKE_BITSET_PRIVATE, WW_NTHREADS,
+            0x2);
         for (i = 0; i < WW_NTHREADS; i++)
                 pthread_join(th[i], NULL);
-        if (__atomic_load_n(&g_terr, __ATOMIC_SEQ_CST) != 0) {
-                failf("%d waiter threads reported kernel errors", g_terr);
+
+        if (total != WW_NTHREADS) {
+                failf("WAKE_BITSET with matching bit woke %ld, expected %d",
+                    total, WW_NTHREADS);
                 err = 1;
         }
-        if (!err && __atomic_load_n(&g_woken, __ATOMIC_SEQ_CST) !=
-            WW_NTHREADS) {
-                failf("only %d/%d waiters reported a wakeup", g_woken,
-                    WW_NTHREADS);
+        if (__atomic_load_n(&g_done, __ATOMIC_SEQ_CST) != WW_NTHREADS) {
+                failf("only %d/%d waiters finished", g_done, WW_NTHREADS);
+                err = 1;
+        }
+        if (__atomic_load_n(&g_stuck, __ATOMIC_SEQ_CST) != 0) {
+                failf("%d waiters hit the deadline without a wakeup", g_stuck);
+                err = 1;
+        }
+        if (__atomic_load_n(&g_terr, __ATOMIC_SEQ_CST) != 0) {
+                failf("%d waiter threads reported kernel errors", g_terr);
                 err = 1;
         }
         return err;
 }
 
-static int t_requeue(void)
+/* Requeue: wake one waiter, move the rest from g_f1 to g_f2, wake them
+ * there. `use_cmp` selects the glibc-realistic FUTEX_CMP_REQUEUE variant
+ * (val3 = expected value) versus plain FUTEX_REQUEUE. Waiters use
+ * time-sliced waits and a deadline, and the test rescues both queues
+ * before joining: any kernel regression surfaces as FAIL, never as a
+ * probe-wide hang. */
+static int run_requeue(int use_cmp)
 {
         pthread_t th[RQ_NTHREADS];
-        long r;
+        long r, total = 0;
         int i, err = 0;
+        int op = use_cmp ? FUTEX_CMP_REQUEUE_PRIVATE : FUTEX_REQUEUE_PRIVATE;
 
         __atomic_store_n(&g_f1, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_f2, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_asleep, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_woken, 0, __ATOMIC_SEQ_CST);
         __atomic_store_n(&g_terr, 0, __ATOMIC_SEQ_CST);
+        __atomic_store_n(&g_stuck, 0, __ATOMIC_SEQ_CST);
+        __atomic_store_n(&g_done, 0, __ATOMIC_SEQ_CST);
+        g_deadline = now_mono() + TEST_DEADLINE;
 
         for (i = 0; i < RQ_NTHREADS; i++)
                 if (pthread_create(&th[i], NULL, waiter_requeue, NULL) != 0) {
@@ -440,31 +517,58 @@ static int t_requeue(void)
         usleep(20000);
 
         __atomic_store_n(&g_f1, 1, __ATOMIC_SEQ_CST);
-        /* FUTEX_REQUEUE passes nr_requeue in the timeout argument slot:
-         * wake 1 waiter, move the remaining RQ_NTHREADS-1 onto g_f2. */
-        r = futex_call(&g_f1, FUTEX_REQUEUE_PRIVATE, 1,
-            (const struct timespec *)(uintptr_t)(RQ_NTHREADS - 1), &g_f2, 0);
+        /* nr_requeue travels in the timeout argument slot. */
+        r = futex_call(&g_f1, op, 1,
+            (const struct timespec *)(uintptr_t)(RQ_NTHREADS - 1), &g_f2,
+            use_cmp ? 1u : 0u);
         if (r != RQ_NTHREADS) {
-                failf("FUTEX_REQUEUE moved %ld, expected %d (1 wake + %d "
-                    "requeued)", r, RQ_NTHREADS, RQ_NTHREADS - 1);
+                failf("%s moved %ld, expected %d (1 wake + %d requeued)",
+                    use_cmp ? "FUTEX_CMP_REQUEUE" : "FUTEX_REQUEUE", r,
+                    RQ_NTHREADS, RQ_NTHREADS - 1);
                 err = 1;
         }
 
         __atomic_store_n(&g_f2, 1, __ATOMIC_SEQ_CST);
-        r = futex_call(&g_f2, FUTEX_WAKE_PRIVATE, RQ_NTHREADS, NULL, NULL, 0);
-        if (r != RQ_NTHREADS - 1) {
-                failf("FUTEX_WAKE on requeue target woke %ld, expected %d", r,
-                    RQ_NTHREADS - 1);
+        total = wake_retry(&g_f2, FUTEX_WAKE_PRIVATE, RQ_NTHREADS,
+            FUTEX_BITSET_MATCH_ANY);
+        if (!err && total != RQ_NTHREADS - 1) {
+                failf("FUTEX_WAKE on requeue target woke %ld, expected %d",
+                    total, RQ_NTHREADS - 1);
                 err = 1;
         }
 
+        /* Rescue: whatever happened above, nobody gets to hang. Waking both
+         * words lets requeued or stranded waiters exit via their predicate. */
+        futex_call(&g_f1, FUTEX_WAKE_PRIVATE, RQ_NTHREADS, NULL, NULL, 0);
+        futex_call(&g_f2, FUTEX_WAKE_PRIVATE, RQ_NTHREADS, NULL, NULL, 0);
+
         for (i = 0; i < RQ_NTHREADS; i++)
                 pthread_join(th[i], NULL);
+
+        if (__atomic_load_n(&g_done, __ATOMIC_SEQ_CST) != RQ_NTHREADS) {
+                failf("only %d/%d waiters finished", g_done, RQ_NTHREADS);
+                err = 1;
+        }
+        if (__atomic_load_n(&g_stuck, __ATOMIC_SEQ_CST) != 0) {
+                failf("%d waiters hit the deadline without a wakeup "
+                    "(requeued waiters lost?)", g_stuck);
+                err = 1;
+        }
         if (__atomic_load_n(&g_terr, __ATOMIC_SEQ_CST) != 0) {
                 failf("%d waiter threads reported kernel errors", g_terr);
                 err = 1;
         }
         return err;
+}
+
+static int t_requeue(void)
+{
+        return run_requeue(1);
+}
+
+static int t_requeue_nc(void)
+{
+        return run_requeue(0);
 }
 
 /* Wake a futex_waitv sleeper through its second list entry. */
@@ -521,6 +625,7 @@ static int t_waitv(void)
 
 static void *contender(void *arg)
 {
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = WAIT_STEP_MS * 1000000L };
         int i;
 
         (void)arg;
@@ -531,9 +636,9 @@ static void *contender(void *arg)
                         if (__atomic_compare_exchange_n(&g_lock, &expected, 1,
                             0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
                                 break;
-                        if (futex_call(&g_lock, FUTEX_WAIT_PRIVATE, 1, NULL,
+                        if (futex_call(&g_lock, FUTEX_WAIT_PRIVATE, 1, &ts,
                             NULL, 0) == -1 && errno != EAGAIN &&
-                            errno != EINTR) {
+                            errno != EINTR && errno != ETIMEDOUT) {
                                 __atomic_add_fetch(&g_terr, 1,
                                     __ATOMIC_SEQ_CST);
                                 return NULL;
@@ -585,16 +690,18 @@ static int t_timed_abs_mono(void);
 static int t_timed_abs_rt(void);
 static int t_bitset(void);
 static int t_requeue(void);
+static int t_requeue_nc(void);
 static int t_waitv(void);
 static int t_contention(void);
 
 static const struct test tests[] = {
-        { "waitwake",           t_waitwake },
-        { "timed_rel",          t_timed_rel },
-        { "timed_abs_mono",     t_timed_abs_mono },
+        { "waitwake",   t_waitwake },
+        { "timed_rel",  t_timed_rel },
+        { "timed_abs_mono", t_timed_abs_mono },
         { "timed_abs_rt",       t_timed_abs_rt },
         { "bitset",             t_bitset },
         { "requeue",            t_requeue },
+        { "requeue_nc",         t_requeue_nc },
         { "waitv",              t_waitv },
         { "contention",         t_contention },
 };
@@ -642,6 +749,9 @@ int main(int argc, char **argv)
                         continue;
 
                 g_err[0] = '\0';
+                /* Per-test wall-clock deadline: waiter loops stop waiting and
+                 * report "stuck" instead of hanging the whole probe. */
+                g_deadline = now_mono() + TEST_DEADLINE;
                 /* Progress markers survive a hang: whoever reads the captured
                  * output sees exactly which test was running when it stopped. */
                 printf("RUN %s\n", tests[t].name);
