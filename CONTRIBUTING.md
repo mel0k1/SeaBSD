@@ -63,6 +63,12 @@ sh tools/linux-matrix.sh run     # full run, report in dist/linux-matrix-report.
 
 Results are classified as `PASS`, `FAIL`, `TIMEOUT`, `SKIP` or `MISSING` — the meaning of each status is documented in [docs/linuxolator.md](docs/linuxolator.md). Both green and red reports are valuable: they feed directly into the v0.1 linuxolator audit.
 
+To make the `base` probes meaningful, install the pinned Linux base first (see [docs/linux-base.md](docs/linux-base.md)):
+
+```sh
+sh tools/fetch-linux-base.sh
+```
+
 ## License
 
 By contributing you agree that your contributions are licensed under the BSD 3-Clause License, matching the [LICENSE](LICENSE) of the project.

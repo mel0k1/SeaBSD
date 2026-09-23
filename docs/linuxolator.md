@@ -25,7 +25,7 @@ For SeaBSD this layer is a product surface, not a compatibility footnote. Most d
 
 ## SeaBSD v0.1 plan
 
-1. **Pick one tested base.** Select a single Linux base (candidate: Ubuntu jammy userland), freeze its composition, and document the decision. A versioned, reproducible base is more valuable than a broad but random one.
+1. **Pick one tested base.** Select a single Linux base and freeze its composition. Decided: **Ubuntu 24.04 LTS (noble)**, pinned as `ubuntu-base-24.04.5-base-amd64.tar.gz` — full rationale, comparison of alternatives and the composition policy live in `docs/linux-base.md`. A versioned, reproducible base is more valuable than a broad but random one.
 2. **Build the test matrix.** Create `tools/linux-matrix.sh` that installs and exercises a fixed list of applications (browsers, Steam, media players, developer tools) and records pass/fail plus failure details. The matrix runs on every FreeBSD-capable CI cycle.
 3. **Audit the gaps.** For every matrix failure, classify the cause: missing library, syscall gap, `/proc` mismatch, audio, graphics. File upstream FreeBSD reports for kernel-level gaps and keep distribution-level fixes in our overlay.
 4. **Tune the defaults.** Make the common case work with zero configuration: correct `/compat/linux` mounts, sensible audio bridging defaults, and a diagnostic command that captures a Linux application failure in a form useful for bug reports.
@@ -49,6 +49,8 @@ sh tools/linux-matrix.sh --strict run        # treat MISSING entries as failures
 ```
 
 The report (`dist/linux-matrix-report.yaml` by default) is designed to be attached to GitHub issues. `base` entries run first by design: if they fail, application-level failures are meaningless until the linuxolator itself is fixed. Optional entries that are simply not installed become `SKIP`, not `FAIL`, so a minimal system still produces a clean, meaningful report.
+
+CI runs the `base` probes on every push: the `freebsd-linux-matrix` job boots a FreeBSD VM, installs the pinned base with `tools/fetch-linux-base.sh` and runs `--only base` (see `docs/linux-base.md` for the pinned artifact). This keeps a continuous, honest signal that the linuxolator itself works with the frozen userland.
 
 ## Success criteria for v0.1
 

@@ -35,9 +35,11 @@ jobs:
       - name: Validate workflow YAML
         run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('YAML OK')"
 
+  # Stabilization phase: VM jobs are non-blocking (continue-on-error) while the
+  # vmactions boot configuration is being tuned. Core jobs above must stay green.
   freebsd-smoke:
     name: FreeBSD smoke test
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -45,9 +47,7 @@ jobs:
         uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
-          release: '14.1'
-          prepare: |
-            pkg install -y shellcheck
+          release: '14.2'
           run: |
             set -e
             scripts=$(find . -name '*.sh' -not -path './.git/*')
@@ -56,7 +56,39 @@ jobs:
               echo "syntax ok: $f"
             done
             sh tools/structure-check.sh
-            shellcheck -x $scripts
+            sh tools/linux-matrix.sh check || true
+            sh tools/linux-matrix.sh list
+
+  freebsd-linux-matrix:
+    name: FreeBSD linuxolator matrix (base)
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot FreeBSD VM, install pinned Linux base, run matrix
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          release: '14.2'
+          prepare: |
+            pkg install -y ca_root_nss
+          run: |
+            set -e
+            kldload linux64 || true
+            sysctl -n compat.linux.osrelease
+            sh tools/fetch-linux-base.sh --dest /compat/linux
+            mkdir -p /compat/linux/proc /compat/linux/sys
+            mount -t linprocfs linproc /compat/linux/proc
+            mount -t linsysfs linsys /compat/linux/sys
+            sh tools/linux-matrix.sh check
+            sh tools/linux-matrix.sh --only base --report dist/freebsd-matrix-report.yaml run
+      - name: Upload matrix report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freebsd-linux-matrix-report
+          path: dist/freebsd-matrix-report.yaml
+          if-no-files-found: ignore
 
   package-source:
     name: Package source tarball

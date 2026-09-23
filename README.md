@@ -29,6 +29,7 @@ SeaBSD is in a **pre-alpha scaffolding stage**. The repository currently contain
 | [VISION.md](VISION.md) | Mission, principles and non-goals of the project |
 | [ROADMAP.md](ROADMAP.md) | Versioned roadmap: v0.1 "Harbor" and beyond |
 | [docs/linuxolator.md](docs/linuxolator.md) | Plan for improving Linux application compatibility |
+| [docs/linux-base.md](docs/linux-base.md) | Decision record: the pinned Ubuntu 24.04 LTS Linux base |
 | [docs/hardware-support.md](docs/hardware-support.md) | Hardware detection and compatibility database plan |
 | [build/README.md](build/README.md) | How to build SeaBSD images from FreeBSD sources |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, code style and commit conventions |

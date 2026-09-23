@@ -29,6 +29,7 @@ SeaBSD находится на **предальфа-этапе каркаса**.
 | [VISION.md](VISION.md) | Миссия, принципы и non-goals проекта |
 | [ROADMAP.md](ROADMAP.md) | Роадмап по версиям: v0.1 «Harbor» и дальше |
 | [docs/linuxolator.md](docs/linuxolator.md) | План улучшения совместимости с Linux-приложениями |
+| [docs/linux-base.md](docs/linux-base.md) | Решение по зафиксированному Linux base — Ubuntu 24.04 LTS |
 | [docs/hardware-support.md](docs/hardware-support.md) | План автоопределения железа и базы совместимости |
 | [build/README.md](build/README.md) | Как собрать образ SeaBSD из исходников FreeBSD |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Настройка разработки, стиль кода, правила коммитов |
