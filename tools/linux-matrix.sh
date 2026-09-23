@@ -23,13 +23,21 @@
 #   SEABSD_MATRIX_TSV      matrix data file (default: tools/linux-matrix.tsv)
 #   SEABSD_MATRIX_REPORT   report path (default: dist/linux-matrix-report.yaml)
 #   SEABSD_MATRIX_TIMEOUT  default probe timeout in seconds (default: 15)
+#   SEABSD_PROBES_DIR      probe directory substituted for "@PROBES@"
+#                          (default: /usr/local/lib/seabsd/probes)
 #
 # Per-entry statuses:
 #   PASS     probe ran and output matched the expected pattern
 #   FAIL     probe ran but output did not match, or the probe errored
 #   TIMEOUT  probe exceeded the time limit (killed)
-#   SKIP     optional entry whose binary is not installed
+#   SKIP     optional entry whose binary is not installed, or a probe that
+#            self-reported "not implemented on this host" (exit code 77)
 #   MISSING  required entry whose binary is not installed
+#
+# Probe binaries: a binary column of "@PROBES@/NAME" is expanded to
+# $SEABSD_PROBES_DIR/NAME (default: /usr/local/lib/seabsd/probes). That
+# directory holds static Linux probe binaries built by the CI linux-probes
+# job from tools/probes/*.c (see docs/futex.md).
 #
 # Exit codes: 0 ok, 1 matrix had FAIL/TIMEOUT (or MISSING with --strict),
 # 2 environment check failed (not FreeBSD), 3 usage error.
@@ -116,7 +124,9 @@ check_env() {
 list_matrix() {
   log "matrix file: $TSV"
   printf '%-16s %-12s %-9s %s\n' 'NAME' 'CATEGORY' 'OPTIONAL' 'BINARY'
-  while IFS='|' read -r name category optional binary args expect; do
+  # "|| [ -n ... ]" keeps a final line without a trailing newline visible.
+  while IFS='|' read -r name category optional binary args expect \
+      || [ -n "${name:-}" ]; do
     case "$name" in
       ''|'#'*) continue ;;
     esac
@@ -151,7 +161,9 @@ run_matrix() {
     log "WARNING: timeout(1) not available, probes run without a time limit"
   fi
 
-  while IFS='|' read -r name category optional binary args expect; do
+  # "|| [ -n ... ]" keeps a final line without a trailing newline visible.
+  while IFS='|' read -r name category optional binary args expect \
+      || [ -n "${name:-}" ]; do
     case "$name" in
       ''|'#'*) continue ;;
     esac
@@ -164,6 +176,13 @@ run_matrix() {
     if [ -n "$ONLY" ] && [ "$category" != "$ONLY" ]; then
       continue
     fi
+
+    # Probe binaries built by CI live in a configurable directory.
+    case "$binary" in
+      @PROBES@/*)
+        binary="${SEABSD_PROBES_DIR:-/usr/local/lib/seabsd/probes}${binary#@PROBES@}"
+        ;;
+    esac
 
     case "$optional" in
       yes) opt_flag=1 ;;
@@ -208,6 +227,14 @@ run_matrix() {
         printf '  - name: "%s"\n    category: "%s"\n    status: TIMEOUT\n    exit: %s\n    detail: "exceeded %ss limit"\n' \
           "$name" "$category" "$rc" "$TIMEOUT_SECS" >> "$REPORT_TMP"
         continue
+        ;;
+      77)
+        # Probe self-reported "not implemented on this host": this is
+        # feature detection, not a failure. See tools/probes/.
+        c_skip=$((c_skip + 1))
+        printf '[SKIP]    %s (%s): probe self-reported not implemented\n' "$name" "$category"
+        printf '  - name: "%s"\n    category: "%s"\n    status: SKIP\n    exit: 77\n    detail: "probe self-reported not implemented on this host"\n' \
+          "$name" "$category" >> "$REPORT_TMP"
         ;;
       0)
         if grep -Eq -- "$expect" "$OUT_TMP"; then

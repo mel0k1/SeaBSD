@@ -2,14 +2,21 @@
 #
 # Fields (pipe-separated):
 #   name      short identifier used in reports and logs
-#   category  base | browsers | gaming | media | development
+#   category  base | browsers | gaming | media | development | futex
 #   optional  yes | no  - optional entries become SKIP when the binary is absent;
 #                         required entries become MISSING
 #   binary    absolute path (inside /compat/linux for Linux userland probes) or
-#             a command name resolved via PATH (for FreeBSD-side launchers)
+#             a command name resolved via PATH (for FreeBSD-side launchers).
+#             "@PROBES@/NAME" expands to $SEABSD_PROBES_DIR/NAME (default
+#             /usr/local/lib/seabsd/probes) - static probe binaries built by
+#             the CI linux-probes job from tools/probes/*.c
 #   args      arguments passed to the binary (must not contain "|")
 #   expect    POSIX extended regex matched against combined probe output;
 #             this is the only field allowed to contain "|"
+#
+# Probe self-reporting: a probe binary may detect that a feature is not
+# implemented on the host kernel and exit with code 77; the runner records
+# SKIP (feature detection) instead of FAIL. See tools/probes/futex_stress.c.
 #
 # Rules for adding entries:
 # - Probes must be non-interactive and safe to run on a user workstation.
@@ -48,3 +55,13 @@ linux-ffmpeg|media|yes|/compat/linux/usr/bin/ffmpeg|-version|ffmpeg
 linux-gcc|development|yes|/compat/linux/usr/bin/gcc|--version|gcc
 linux-python3|development|yes|/compat/linux/usr/bin/python3|--version|Python
 linux-git|development|yes|/compat/linux/usr/bin/git|--version|git version
+
+# --- Futex (kernel futex paths, static probes from tools/probes) ------------
+# futex-core: the wait/wake surfaces every threaded Linux program leans on
+# (private flag, both timeout timebases, bitsets, requeue, contention).
+# futex-waitv: futex_waitv (newer interface, may legitimately be ENOSYS on
+# older hosts - recorded as SKIP). Plan and risk zones: docs/futex.md.
+# Required entries: CI installs the probe binary and points SEABSD_PROBES_DIR
+# at it; on a workstation without probes they are reported as MISSING.
+futex-core|futex|no|@PROBES@/futex_stress|waitwake timed_rel timed_abs_mono timed_abs_rt bitset requeue contention|fail=0
+futex-waitv|futex|no|@PROBES@/futex_stress|waitv|fail=0
